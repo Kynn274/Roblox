@@ -1,0 +1,169 @@
+--game.re--equlocal players = game:GetService("Players")
+
+--local player = players.LocalPlayer
+--local replicatedStorage = game:GetService("ReplicatedStorage")
+--local runService = game:GetService("RunService")
+
+--local player = game.Players.LocalPlayer
+
+--local remotes = replicatedStorage:WaitForChild("Remotes")
+--local mainSS = player:WaitForChild("PlayerGui"):WaitForChild("MainSS")
+--local doorPurchaseUI = mainSS:WaitForChild("PurchaseArea")
+--local despawnedDrops = replicatedStorage:WaitForChild("DespawnedDrops")
+
+--local areaBuyBtnConnection
+
+--remotes.PromptPurchaseDoor.OnClientEvent:Connect(function(door)
+--	doorPurchaseUI.Visible = true
+--	doorPurchaseUI.PurchaseText.Text = "Would you like to purchase this area for "..door.Price.Value.." Coins"
+
+--	areaBuyBtnConnection = doorPurchaseUI.Buy.MouseButton1Click:Connect(function()
+--		local result = remotes.PurchaseDoor:InvokeServer(door)
+--		if result == true then
+--			door:Destroy()
+--		end
+--		areaBuyBtnConnection:Disconnect()
+--		doorPurchaseUI.Visible = false
+--	end)
+--end)
+
+--doorPurchaseUI.Close.MouseButton1Click:Connect(function()
+--	doorPurchaseUI.Visible = false
+--end)
+
+--local function destroyDrop(drop)
+--	task.wait(0.5)
+--	local oldParent = drop.Parent
+--	drop.Parent= despawnedDrops
+--	task.wait(4)
+--	drop.Health.Value = drop.MaxHealth.Value
+--	drop.Parent = oldParent
+--	player.leaderstats.Coins.Value += 5
+--end
+
+--task.spawn(function()
+--	while task.wait(1) do
+--		if player.Values.SentTo.Value ~= nil then
+--			local damage = 20
+
+--			player.Values.SentTo.Value.Health.Value = math.max(player.Values.SentTo.Value.Health.Value - damage,0)
+
+--			print(player.Values.SentTo.Value)
+--			if player.Values.SentTo.Value.Health.Value == 0 then
+--				remotes.StopDamaging:FireServer()
+--				destroyDrop(player.Values.SentTo.Value)
+
+
+--			end
+--		end
+--	end
+--end)
+
+--runService.Heartbeat:Connect(function()
+--	for _, drop in pairs(workspace:WaitForChild("MainFolder_Workspace"):WaitForChild("Drops"):GetDescendants()) do
+--		if drop:IsA("Model") then
+--			local healthDisplay = drop:FindFirstChild("HealthDisplay")
+--			local bar = healthDisplay.Background.Bar
+--			local healthDisplayText = healthDisplay.Background.HealthDisplayLabel
+
+--			healthDisplayText.Text = drop.Health.Value
+--			bar:TweenSize(UDim2.fromScale(drop.Health.Value/drop.MaxHealth.Value, 1), Enum.EasingDirection.Out,Enum.EasingStyle.Sine,0.3)
+--		end
+--	end
+--
+
+local Players = game:GetService("Players")
+local DataStoreService = game:GetService('DataStoreService')
+local DataStore = DataStoreService:GetDataStore('MyDataStore1')
+
+local mainFolder_Workspace = workspace.MainFolder_Workspace
+local playerPets = mainFolder_Workspace.PlayerPets
+local drops = mainFolder_Workspace.Drops
+
+--Players.PlayerAdded:Connect(function(player)
+--	local folder = Instance.new("Folder")
+--	folder.Name = player.Name
+--	folder.Parent = playerPets
+
+--	for _,v in pairs(script.PlayerData:GetChildren()) do
+--		v:Clone().Parent = player
+--	end
+--	--update leaderstats.coins
+--	local Data = DataStore:GetAsync(tostring(player.UserId))
+--	player.leaderstats.Coins.Value = Data.Coins
+--end)
+
+Players.PlayerRemoving:Connect(function(player)
+	if playerPets:FindFirstChild(player.Name) then
+		playerPets:FindFirstChild(player.Name):Destroy()
+	end
+end)
+
+game.ReplicatedStorage.Remotes.PurchaseDoor.OnServerInvoke = function(player,door)
+	local serverDoor = workspace.MainFolder_Workspace.Doors:FindFirstChild(door.Name)
+
+	if serverDoor then
+		if player.leaderstats.Coins.Value >= serverDoor.Price.Value then
+			if not player.Areas:FindFirstChild(serverDoor.Name) then
+				player.leaderstats.Coins.Value -= serverDoor.Price.Value
+				local doorVal = Instance.new("StringValue")
+				doorVal.Name = serverDoor.Name
+				doorVal.Parent = player.Areas
+				return true
+			end
+		else
+			return false
+		end
+	end
+end
+
+game.ReplicatedStorage.Remotes.StopDamaging.OnServerEvent:Connect(function(player)
+	player.Values.SentTo.Value = nil
+	local currentPlayerPets = playerPets[player.Name]
+	if #currentPlayerPets:GetChildren() > 0 then
+		local pet = currentPlayerPets:FindFirstChildOfClass("Model")
+		pet.Attack.Value = nil
+	end
+end)
+
+for _, drop in pairs(drops:GetDescendants()) do
+	if drop:IsA("Model") then
+		drop.Health.Value = drop.MaxHealth.Value
+		drop.ClickDetector.MouseClick:Connect(function(player)
+			local currentPlayerPets = playerPets[player.Name]
+			if #currentPlayerPets:GetChildren() > 0 then
+				local pet = currentPlayerPets:FindFirstChildOfClass("Model")
+				if player.Values.SentTo.Value == nil then
+					player.Values.SentTo.Value = drop
+					pet.Attack.Value = player.Values.SentTo.Value
+				elseif player.Values.SentTo.Value == drop then
+					player.Values.SentTo.Value = nil
+					pet.Attack.Value = player.Values.SentTo.Value
+				elseif player.Values.SentTo.Value ~= nil and player.Values.SentTo.Value ~= drop then
+					player.Values.SentTo.Value = drop
+					pet.Attack.Value = player.Values.SentTo.Value
+				end
+			end
+		end)
+	end
+end
+
+for _, door in pairs(workspace.MainFolder_Workspace.Doors:GetChildren()) do
+	door.SurfaceGui.PriceLabel.Text = door.Price.Value.." Coins"
+	door.ProximityPart.ProximityPrompt.Triggered:Connect(function(player)
+		if not player.Areas:FindFirstChild(door.Name) then
+			game.ReplicatedStorage.Remotes.PromptPurchaseDoor:FireClient(player,door)
+		end
+	end)
+end
+
+game.ReplicatedStorage.Remotes.EquipPet.OnServerEvent:Connect(function(player, petName)
+	if player.Pets:FindFirstChild(petName) then
+		local petModel = game.ReplicatedStorage.Pets:FindFirstChild(petName):Clone()
+		petModel.Parent = workspace.MainFolder_Workspace.PlayerPets:FindFirstChild(player.Name)
+	end
+end)
+
+game.ReplicatedStorage.Remotes.UnequipPets.OnServerEvent:Connect(function(player)
+	workspace.MainFolder_Workspace.PlayerPets:FindFirstChild(player.Name):ClearAllChildren()
+end)
